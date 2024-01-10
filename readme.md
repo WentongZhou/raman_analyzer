@@ -76,15 +76,32 @@ peak_param = {"d": [1340,1360,'auto'],
               "2d":[2500,2900,9],
               "total":[1000,3600,0.1,2000,2200]}
 directory = "./raman_spectra"
-peak_data, all_peaks = raman.ratio_calculator(directory,**peak_param)
+peak_data, all_peaks = raman.ratio_calculator(directory,ref ='g',**peak_param)
 ```
+- `directory`: the directory of the Raman spectra
+- `ref`: the reference peak for the calculation of peak ratios
 - `peak_param`: the dictionary of peak parameters.
   - `"total"`: it contains the range of the whole spectrum, the filter number, and the range of noise level.
   - All other items: it contains the range of the peak, and the filter number. if the third value in the list is `"auto"`, the script would find the peak using maximum value in the range.
 
+### Automate peak fitting on single Raman spectrum
+```Python
+obj_fitting = raman.raman_fitting(name,fit_min,fit_max,kw_fn,\
+                                  fit_algo,fit_type,peak_num,\
+                                  min,max,filter)
+```
+- `name`,`min`,`max`,`filter`: those are inherited from `raman_analyzer` class
+- `fit_min`,`fit_max`: the range of wavenumbers you are interested in fitting
+- `kw_fn`: `**kwargs` containing parameters for fitting algorithm 
+- `fit_algo`: the fitting algorithm you want to use. For details, please refer to [lmfit documentation](https://lmfit.github.io/lmfit-py/fitting.html).
+- `fit_type`: the type of fitting peaks. It can be `gaussian` or `lorentzian`.
+- `peak_num`: the number of fitting peaks.
+
+![peak_fit](peak_fit.png)
+
 ## To-do list
 - [x] Batch operation of exporting baseline corrected Raman spectra
-- [ ] Batch operation of exporting peak fitting results
+- [x] Batch operation of exporting peak fitting results
 - [ ] CLI usage of the script  
 ## Author
 - Wentong Zhou[@Linkedin](https://www.linkedin.com/in/wentong-zhou-5ab2402a/)
