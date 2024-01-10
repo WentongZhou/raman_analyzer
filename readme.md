@@ -1,7 +1,7 @@
 # Automated raman-analyzer 
 
 <div align="center">
-<img src="raman.png" alt="Raman Analyzer" width="300">
+<img src="raman1.png" alt="Raman Analyzer" width="300">
 </div>
 
 The long-term goal of this script is to automate peak-fitting process of Raman Spectrum.\
