@@ -185,7 +185,7 @@ def raman_plot(a,min,max):
     plt.xlim(min,max)
     plt.xlabel("Raman shift, cm$^{-1}$", fontsize = 12)
     plt.ylabel("Normalized intensity, a. u.", fontsize = 12)
-    plt.legend(fontsize=10)
+    plt.legend(fontsize=8)
     plt.subplot(1,2,2)  
     plt.plot(a.spectrum_fit[:,0],a.spectrum_fit[:,1],'#F5420a',marker='.',markersize=3,label='spectrum_fit')
     plt.scatter(a.peak_filtered,a.signal_filtered,s=100,c='#0af57c',marker='o')
