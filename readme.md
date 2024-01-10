@@ -80,7 +80,7 @@ peak_data, all_peaks = raman.ratio_calculator(directory,**peak_param)
 ```
 - `peak_param`: the dictionary of peak parameters.
   - `"total"`: it contains the range of the whole spectrum, the filter number, and the range of noise level.
-  - All other items: it contains the range of the peak, and the filter number. if the third value in the list is "auto", the script would find the peak using maximum value in the range.
+  - All other items: it contains the range of the peak, and the filter number. if the third value in the list is `"auto"`, the script would find the peak using maximum value in the range.
 
 ## To-do list
 - [x] Batch operation of exporting baseline corrected Raman spectra
