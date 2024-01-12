@@ -5,6 +5,7 @@ import rampy as rp
 import scipy
 from scipy import signal
 import pandas as pd
+import lmfit
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -185,7 +186,7 @@ def raman_plot(a,min,max):
     plt.xlim(min,max)
     plt.xlabel("Raman shift, cm$^{-1}$", fontsize = 12)
     plt.ylabel("Normalized intensity, a. u.", fontsize = 12)
-    plt.legend(fontsize=10)
+    plt.legend(fontsize=8)
     plt.subplot(1,2,2)  
     plt.plot(a.spectrum_fit[:,0],a.spectrum_fit[:,1],'#F5420a',marker='.',markersize=3,label='spectrum_fit')
     plt.scatter(a.peak_filtered,a.signal_filtered,s=100,c='#0af57c',marker='o')
@@ -213,6 +214,8 @@ def noise_plot(a,min,max):
     plt.ylabel("Normalized intensity, a. u.", fontsize = 12)
     plt.xlabel("Raman shift, cm$^{-1}$", fontsize = 12)
     plt.show()
+
+
 
 def ratio_calculator(directory,ref = "g",**peak_param):
     """
@@ -260,7 +263,7 @@ def ratio_calculator(directory,ref = "g",**peak_param):
         elif len(peak_info) == 3 and peak_info[2] == "auto" and peak_name != ref:
             for file in glob.glob(f"{directory}/*.dpt"):
                 name = file.split('/')[-1] + '.txt'
-                test = raman_analyzer(file,peak_param['total'][0],peak_param['total'][1],0.1)
+                test = raman_analyzer(file,peak_param['total'][0],peak_param['total'][1],0.2)
                 fit_spectrum = pd.DataFrame(test.spectrum_fit)
                 # fit_spectrum.plot(x=0,y=1,title=file_name)
                 d_peak = fit_spectrum[(fit_spectrum.iloc[:,0] <= peak_info[1]) & (fit_spectrum.iloc[:,0] >= peak_info[0])]
@@ -271,7 +274,7 @@ def ratio_calculator(directory,ref = "g",**peak_param):
                 peak_signal = peak_signal if peak_signal > test.peak_threshold else 0
                 peak_ratio = peak_signal/peak_data[name][ref]['signal']
                 peak_indice = bisect.bisect_left(test.peak_filtered,peak_value)
-                fwhm = test.fwhm[peak_indice] if test.peak_filtered[peak_indice] - peak_value < 5 else 0
+                fwhm = test.fwhm[peak_indice] if peak_signal != 0 else 0
                 peak_data[name][peak_name] = {"peak":peak_value,"signal":abs(peak_signal),'fwhm':test.fwhm[peak_indice],f'{peak_name}_{ref}':peak_ratio}
 
     file_name = [peak for peak in peak_data.keys()]
@@ -279,14 +282,17 @@ def ratio_calculator(directory,ref = "g",**peak_param):
     columns = ['name']
     for peak_name in peak_param:
         if peak_name != 'total':
-            all_peaks.append([peak_data[name][peak_name]["peak"] for name in file_name])
-            all_peaks.append([peak_data[name][peak_name]["signal"] for name in file_name])
-            all_peaks.append([peak_data[name][peak_name]["fwhm"] for name in file_name])
-            all_peaks.append([peak_data[name][peak_name][f'{peak_name}_{ref}'] for name in file_name])
-            columns.append(f'{peak_name}_peak')
-            columns.append(f'{peak_name}_signal')
-            columns.append(f'{peak_name}_fwhm')
-            columns.append(f'I{peak_name}_I{ref}')
+            try:
+                all_peaks.append([peak_data[name][peak_name]["peak"] for name in file_name])
+                all_peaks.append([peak_data[name][peak_name]["signal"] for name in file_name])
+                all_peaks.append([peak_data[name][peak_name]["fwhm"] for name in file_name])
+                all_peaks.append([peak_data[name][peak_name][f'{peak_name}_{ref}'] for name in file_name])
+                columns.append(f'{peak_name}_peak')
+                columns.append(f'{peak_name}_signal')
+                columns.append(f'{peak_name}_fwhm')
+                columns.append(f'I{peak_name}_I{ref}')
+            except:
+                print(f'Error: {name} of {peak_name} is not in the spectrum')
 
     all_peaks = pd.DataFrame(np.array(all_peaks).T)
     # add two more rows about average and std
@@ -301,4 +307,126 @@ def ratio_calculator(directory,ref = "g",**peak_param):
       
     return peak_data, all_peaks
 
+
+class raman_fitting(raman_analyzer):
+
+    def __init__(self,name,fit_min,fit_max,kw_fn={},\
+                 fit_algo='nelder',fit_type='gaussian',\
+                 peak_num=5,min=1100,max=3000,filter=5,noise_min=1100,noise_max=3000):
+        self.fit_min = fit_min
+        self.fit_max = fit_max
+        self.fit_algo = fit_algo
+        self.kw_fn = kw_fn
+        self.peak_num = peak_num
+        self.fit_type = fit_type
+        super().__init__(name, min, max, filter, noise_min, noise_max)
+        self.fit_gen()
+        self.fit_minimize()
+        self.fit_plot()
+
+
+
+
+
+    def fit_preplot(self):
+        """
+        This function is used to plot the spectrum with raw data, baseline corrected normalized data.
+        """
+        raman_plot(self, self.fit_min, self.fit_max)
+
+
+
+
+
+    def fit_gen(self,amplitude:float=3,wide:float=15):
+        """
+        This function is generate inital guess for the peak fitting.
+        """
+        # get self.spectrum_fit within range of fit_min and fit_max
+        self.fit_range = self.spectrum_fit[(self.spectrum_fit[:,0] >= self.fit_min) & (self.spectrum_fit[:,0] <= self.fit_max)]
+        self.fit_peaks = np.array(self.peak_filtered)
+        self.fit_peaks = self.fit_peaks[(self.fit_peaks >= self.fit_min) & (self.fit_peaks <= self.fit_max)]
+        self.fit_params = lmfit.Parameters()
+        if len(self.fit_peaks) > self.peak_num:
+            self.fit_peaks = self.fit_peaks[:self.peak_num]
+        elif len(self.fit_peaks) < self.peak_num:
+            range_gap = self.peak_num - len(self.fit_peaks)
+            self.fit_peaks = np.append(self.fit_peaks, np.linspace(self.fit_min + 20, self.fit_max - 20, range_gap))
+        # build the initial guess for the fitting and check lmfit documentation for more details
+        for i in range(self.peak_num):
+            self.fit_params.add_many((f'a{i}',amplitude,True,0,None,None),
+                                     (f'f{i}',self.fit_peaks[i],True,self.fit_peaks[i]-75,self.fit_peaks[i]+75,None),
+                                     (f'l{i}',wide,True,0,50,None))
+            
+    def fit_residue(self,par,x,data=None,eps=None):
+        """
+        This function is used to calculate the residue of the fitting.
+        for more details, check lmfit documentation.
+        """
+        model = np.zeros(len(self.fit_range[:,0]))
+        fit_y = {}
+        for i in par:
+            locals()[i] = par[i].value
+        for i in range(self.peak_num):
+            if self.fit_type == 'gaussian':
+                locals()[f'peak{i}'] = rp.gaussian(x,locals()[f'a{i}'],locals()[f'f{i}'],locals()[f'l{i}'])
+                fit_y[f'peak{i}'] = locals()[f'peak{i}']
+            elif self.fit_type == 'lorentzian':
+                locals()[f'peak{i}'] = rp.lorentzian(x,locals()[f'a{i}'],locals()[f'f{i}'],locals()[f'l{i}'])
+                fit_y[f'peak{i}'] = locals()[f'peak{i}']
+            model += locals()[f'peak{i}']
+        # if we don't have data, the function only returns the direct calculation
+        if data is None: 
+            return model, fit_y
+        # without errors, no ponderation
+        if eps is None: 
+            return (model - data)
+        # with errors, the difference is ponderated
+        return (model - data) / eps
+
+        
+    def fit_minimize(self):
+        """
+        This function is used to minimize the residue of the fitting.
+        """
+        for i in range(self.peak_num):
+            self.fit_params[f'f{i}'].vary = False
+        self.fit_result = lmfit.minimize(self.fit_residue,self.fit_params,method = self.fit_algo,\
+                                         args=(self.fit_range[:,0],self.fit_range[:,1]),**self.kw_fn)
+        for i in range(self.peak_num):
+            self.fit_params[f'f{i}'].vary = True
+        self.fit_result1 = lmfit.minimize(self.fit_residue,self.fit_params,method = self.fit_algo,\
+                                         args=(self.fit_range[:,0],self.fit_range[:,1]),**self.kw_fn)
+    
+
+    def fit_plot(self):
+        """
+        This function is used to plot the fitting result.
+        """
+        plt.figure(figsize=(10,5))
+        x_fit = self.fit_range[:,0]
+        y_fit = self.fit_range[:,1]
+        self.model = lmfit.fit_report(self.fit_result1.params)
+        yout,fit_y = self.fit_residue(self.fit_result1.params,x_fit)
+        plt.scatter(x_fit[::6],y_fit[::6],s=20,marker='o',color='#EA6C0A',label='experimental data')
+        plt.scatter(x_fit,yout,s=1,marker='*',color='#743809',label='fitting data')
+        for i in range(self.peak_num):
+            plt.plot(x_fit,fit_y[f'peak{i}'],color='#DEA01A')
+        plt.ylim(-0.5,10.5)
+        plt.xlim(self.fit_min,self.fit_max)
+        plt.xlabel("Raman shift, cm$^{-1}$", fontsize = 14)
+        plt.ylabel("Normalized intensity, a. u.", fontsize = 14)
+        plt.legend(fontsize=9)
+
+        
+        
+    
+
+
+
+
+
+
+
+    
 
