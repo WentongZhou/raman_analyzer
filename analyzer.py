@@ -359,6 +359,10 @@ class raman_fitting(raman_analyzer):
                                      (f'l{i}',wide,True,0,50,None))
             
     def fit_residue(self,par,x,data=None,eps=None):
+        """
+        This function is used to calculate the residue of the fitting.
+        for more details, check lmfit documentation.
+        """
         model = np.zeros(len(self.fit_range[:,0]))
         fit_y = {}
         for i in par:
@@ -396,7 +400,9 @@ class raman_fitting(raman_analyzer):
     
 
     def fit_plot(self):
-        # figsize
+        """
+        This function is used to plot the fitting result.
+        """
         plt.figure(figsize=(10,5))
         x_fit = self.fit_range[:,0]
         y_fit = self.fit_range[:,1]
@@ -405,12 +411,12 @@ class raman_fitting(raman_analyzer):
         plt.scatter(x_fit[::6],y_fit[::6],s=20,marker='o',color='#EA6C0A',label='experimental data')
         plt.scatter(x_fit,yout,s=1,marker='*',color='#743809',label='fitting data')
         for i in range(self.peak_num):
-            plt.plot(x_fit,fit_y[f'peak{i}'],label=f'peak{i}',color='#DEA01A')
+            plt.plot(x_fit,fit_y[f'peak{i}'],color='#DEA01A')
         plt.ylim(-0.5,10.5)
         plt.xlim(self.fit_min,self.fit_max)
         plt.xlabel("Raman shift, cm$^{-1}$", fontsize = 14)
         plt.ylabel("Normalized intensity, a. u.", fontsize = 14)
-        plt.legend(fontsize=5)
+        plt.legend(fontsize=9)
 
         
         
