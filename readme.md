@@ -79,7 +79,7 @@ directory = "./raman_spectra"
 peak_data, all_peaks = raman.ratio_calculator(directory,ref ='g',**peak_param)
 ```
 - `directory`: the directory of the Raman spectra
-- `ref`: the reference peak for the calculation of peak ratios
+- `ref`: the reference peak for the calculation of peak intensity ratios
 - `peak_param`: the dictionary of peak parameters.
   - `"total"`: it contains the range of the whole spectrum, the filter number, and the range of noise level.
   - All other items: it contains the range of the peak, and the filter number. if the third value in the list is `"auto"`, the script would find the peak using maximum value in the range.
@@ -98,6 +98,14 @@ obj_fitting = raman.raman_fitting(name,fit_min,fit_max,kw_fn,\
 - `peak_num`: the number of fitting peaks.
 
 ![peak_fit](peak_fit.png)
+
+### Batch operation of exporting peak fitting results
+By running the following code, the script would export the fitting parameters of each spectrum in a csv file.
+
+```Python
+result = raman.raman_fitting_batch(directory,fit_min,fit_max,peak_num,min,max,export,filter,fit_algo,fit_type)
+```
+- `export`: if True, the script would export the fitting peak images
 
 ## To-do list
 - [x] Batch operation of exporting baseline corrected Raman spectra

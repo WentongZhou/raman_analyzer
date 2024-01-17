@@ -413,7 +413,7 @@ class raman_fitting(raman_analyzer):
         plt.xlabel("Raman shift, cm$^{-1}$", fontsize = 14)
         plt.ylabel("Normalized intensity, a. u.", fontsize = 14)
         plt.legend(fontsize=9)
-        plt.savefig(f'{self.name}_fit.png',dpi=300)
+        plt.show()
 
     def fit_export(self):
         """
