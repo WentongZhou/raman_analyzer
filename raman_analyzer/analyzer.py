@@ -312,31 +312,23 @@ class raman_fitting(raman_analyzer):
 
     def __init__(self,name,fit_min,fit_max,kw_fn={},\
                  fit_algo='nelder',fit_type='gaussian',\
-                 peak_num=5,min=1100,max=3000,filter=5,noise_min=1100,noise_max=3000):
+                 peak_num=5,min=1100,max=3000,filter=5):
         self.fit_min = fit_min
         self.fit_max = fit_max
         self.fit_algo = fit_algo
         self.kw_fn = kw_fn
         self.peak_num = peak_num
         self.fit_type = fit_type
-        super().__init__(name, min, max, filter, noise_min, noise_max)
+        super().__init__(name, min, max, filter, min, max)
         self.fit_gen()
         self.fit_minimize()
-        self.fit_plot()
-
-
-
-
+        self.fit_export()
 
     def fit_preplot(self):
         """
         This function is used to plot the spectrum with raw data, baseline corrected normalized data.
         """
         raman_plot(self, self.fit_min, self.fit_max)
-
-
-
-
 
     def fit_gen(self,amplitude:float=3,wide:float=15):
         """
@@ -347,16 +339,22 @@ class raman_fitting(raman_analyzer):
         self.fit_peaks = np.array(self.peak_filtered)
         self.fit_peaks = self.fit_peaks[(self.fit_peaks >= self.fit_min) & (self.fit_peaks <= self.fit_max)]
         self.fit_params = lmfit.Parameters()
-        if len(self.fit_peaks) > self.peak_num:
+        n = len(self.fit_peaks)
+        if n > self.peak_num:
             self.fit_peaks = self.fit_peaks[:self.peak_num]
-        elif len(self.fit_peaks) < self.peak_num:
+        elif n < self.peak_num:
             range_gap = self.peak_num - len(self.fit_peaks)
             self.fit_peaks = np.append(self.fit_peaks, np.linspace(self.fit_min + 20, self.fit_max - 20, range_gap))
         # build the initial guess for the fitting and check lmfit documentation for more details
         for i in range(self.peak_num):
-            self.fit_params.add_many((f'a{i}',amplitude,True,0,None,None),
-                                     (f'f{i}',self.fit_peaks[i],True,self.fit_peaks[i]-75,self.fit_peaks[i]+75,None),
-                                     (f'l{i}',wide,True,0,50,None))
+            if i < n:
+                self.fit_params.add_many((f'a{i}',amplitude,True,0,None,None),
+                                         (f'f{i}',self.fit_peaks[i],True,self.fit_peaks[i]-25,self.fit_peaks[i]+25,None),
+                                         (f'l{i}',wide,True,0,50,None))
+            else:
+                self.fit_params.add_many((f'a{i}',amplitude,True,0,None,None),
+                                         (f'f{i}',self.fit_peaks[i],True,self.fit_peaks[i]-75,self.fit_peaks[i]+75,None),
+                                         (f'l{i}',wide,True,0,50,None))
             
     def fit_residue(self,par,x,data=None,eps=None):
         """
@@ -384,7 +382,6 @@ class raman_fitting(raman_analyzer):
         # with errors, the difference is ponderated
         return (model - data) / eps
 
-        
     def fit_minimize(self):
         """
         This function is used to minimize the residue of the fitting.
@@ -397,7 +394,6 @@ class raman_fitting(raman_analyzer):
             self.fit_params[f'f{i}'].vary = True
         self.fit_result1 = lmfit.minimize(self.fit_residue,self.fit_params,method = self.fit_algo,\
                                          args=(self.fit_range[:,0],self.fit_range[:,1]),**self.kw_fn)
-    
 
     def fit_plot(self):
         """
@@ -417,6 +413,62 @@ class raman_fitting(raman_analyzer):
         plt.xlabel("Raman shift, cm$^{-1}$", fontsize = 14)
         plt.ylabel("Normalized intensity, a. u.", fontsize = 14)
         plt.legend(fontsize=9)
+        plt.savefig(f'{self.name}_fit.png',dpi=300)
+
+    def fit_export(self):
+        """
+        This function is used to export the fitting result.
+        """
+        self.fit_report = []
+        for i in range(self.peak_num):
+            single_report = []
+            single_report.append(self.fit_result1.params[f'f{i}'].value)
+            single_report.append(self.fit_result1.params[f'l{i}'].value * 2)
+            single_report.append(self.fit_result1.params[f'a{i}'].value)
+            self.fit_report.append(single_report)
+        self.fit_report.sort()
+
+
+def raman_fitting_batch(directory,fit_min,fit_max,min=1100,max=3000,filter=5,kw_fn={},peak_num=5,export=False,fit_algo='powell',fit_type='gaussian'):
+    """
+    This function is used to perform peak fitting in batch and export the fitting result.
+    params:
+    directory: the directory of the spectrum files
+    name: the name list of the spectrum files
+    fit_min: the minimum wavenumber of the fitting
+    fit_max: the maximum wavenumber of the fitting
+    peak_num: the number of peaks to be fitted
+    fit_algo: the fitting algorithm
+    fit_type: the fitting type, gaussian or lorentzian
+    """
+    # create an empty array with 3 * peak_num columns
+    fit_reports = []
+    names = []
+    # loop all the files in the directory
+    for file in glob.glob(f"{directory}/*.dpt"):
+        result = raman_fitting(file,fit_min,fit_max,kw_fn,fit_algo,fit_type,peak_num,min,max,filter)
+        names.append(file.split('/')[-1])
+        if export == True:
+            result.fit_plot()
+        # export the fitting result
+        fit_report = np.array(result.fit_report).T
+        fit_report = fit_report.reshape(1,-1)
+        fit_reports.append(fit_report[0])
+    columns = [f'peak{i}' for i in range(peak_num)] + \
+              [f'fwhm{i}' for i in range(peak_num)] + \
+              [f'intensity{i}' for i in range(peak_num)]
+    fit_reports = pd.DataFrame(fit_reports,columns=columns)
+    # calculate the average and std of the fitting result
+    fit_reports.loc['average'] = fit_reports.mean()
+    fit_reports.loc['std'] = fit_reports.std()
+    # add the names as the first column
+    names.append('average')
+    names.append('std')
+    fit_reports.insert(0,'name',names)
+    # export the fitting result as csv file
+    fit_reports.to_csv(f'{directory}_fit.csv',index=False)
+    return fit_reports
+
 
         
         
