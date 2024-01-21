@@ -62,7 +62,7 @@ class raman_analyzer:
             wavenumber=self.spectrum_resample[d[0][i]][0]
             bir[i][0]=wavenumber
             bir[i][1]=wavenumber+5
-        y_corr, self.y_base = rp.baseline(self.spectrum_resample[:,0],self.spectrum_resample[:,1],bir,'drPLS')
+        y_corr, self.y_base = rp.baseline(self.spectrum_resample[:,0],self.spectrum_resample[:,1],bir,'arPLS', lam=10**7, ratio=0.001)
         x = self.spectrum_resample[:,0]
         x_fit = x[np.where((x > self.min)&(x < self.max))]
         y_fit = y_corr[np.where((x > self.min)&(x < self.max))]
@@ -83,22 +83,25 @@ class raman_analyzer:
         peaks = np.insert(peaks_1[0],0,saddles[0])
         peaks = np.sort(peaks)
         self.peak_pos = peaks
-        self.peak_wavenumber,self.peak_signal = [],[]
+        self.peak_wavenumber,self.peak_signal,self.peak_abs_signal = [],[],[]
         for peak in peaks:
             self.peak_wavenumber.append(self.spectrum_fit.T[0][peak])
             self.peak_signal.append(self.spectrum_fit.T[1][peak])
+            self.peak_abs_signal.append(self.spectrum_corr.T[1][peak])
     
     def peak_organizer(self):
         """
         Get the peak position and peak intensity of the spectrum based on a filter value.
         
         """
-        self.peak_pos_filtered,self.peak_filtered,self.signal_filtered = [],[],[]
+        self.peak_pos_filtered,self.peak_filtered,self.signal_filtered,self.abs_signal_filtered = [],[],[],[]
         for i in range(len(self.peak_wavenumber)):
             if self.peak_signal[i] > self.filter:
                 self.peak_pos_filtered.append(self.peak_pos[i])
                 self.peak_filtered.append(self.peak_wavenumber[i])
                 self.signal_filtered.append(self.peak_signal[i])
+                self.abs_signal_filtered.append(self.peak_abs_signal[i])
+
 
     def peak_fwhm(self):
         """
@@ -124,7 +127,7 @@ class raman_analyzer:
 
 
 
-def raman_batch(dirs,min,max,filter,show=False,export=False,noise_test=False,noise_min=1700,noise_max=2400):
+def raman_batch(dirs,min,max,filter,show=False,normalized=True,export=False,noise_test=False,noise_min=1700,noise_max=2400):
     """
     This function is used to analyze the Raman spectrum in batch.
     dirs: the directory of the spectrum files
@@ -159,7 +162,10 @@ def raman_batch(dirs,min,max,filter,show=False,export=False,noise_test=False,noi
             raman = raman_analyzer(a,min,max,filter,noise_min,noise_max)
             if export == False:
                 peaks.append(raman.peak_filtered)
-                signals.append(raman.signal_filtered)
+                if normalized == True:
+                    signals.append(raman.signal_filtered)
+                else:
+                    signals.append(raman.abs_signal_filtered)
             peak_threshold.append(raman.peak_threshold)
             name.append(file_name)
             fwhm.append(raman.fwhm)
@@ -167,7 +173,10 @@ def raman_batch(dirs,min,max,filter,show=False,export=False,noise_test=False,noi
             if export == True:
                 np.savetxt(f'./{dirs}_trans/{file_name}.txt', raman.spectrum_fit,fmt='%10.5f')
                 peaks.append(raman.spectrum_fit[:,0])
-                signals.append(raman.spectrum_fit[:,1])
+                if normalized == True:
+                    signals.append(raman.spectrum_fit[:,1])
+                else:
+                    signals.append(raman.spectrum_corr[:,1])
             if show == True:
                 raman_plot(raman,min,max)
             if noise_test == True:
@@ -217,7 +226,7 @@ def noise_plot(a,min,max):
 
 
 
-def ratio_calculator(directory,ref = "g",**peak_param):
+def ratio_calculator(directory,ref = "g",normalized = True,**peak_param):
     """
     This function is used to calculate the ratio of the peaks in batch
     parameters:
@@ -233,12 +242,12 @@ def ratio_calculator(directory,ref = "g",**peak_param):
         if peak_name == 'total':
             peaks,signals,fwhm,fwhm_test,names,peak_threshold = raman_batch(f'{directory}',peak_param[peak_name][0],\
                                                                             peak_param[peak_name][1],peak_param[peak_name][2],\
-                                                                            noise_min=peak_param[peak_name][3],\
+                                                                            normalized=normalized,noise_min=peak_param[peak_name][3],\
                                                                             noise_max=peak_param[peak_name][4],export=True)
         else:
             peaks,signals,fwhm,fwhm_test,names,peak_threshold = raman_batch(f'{directory}_trans',peak_param[peak_name][0],\
                                                                             peak_param[peak_name][1],peak_param[peak_name][2],\
-                                                                            noise_min=peak_param[peak_name][0],\
+                                                                            normalized=normalized,noise_min=peak_param[peak_name][0],\
                                                                             noise_max=peak_param[peak_name][1],export=False)
         # store the peak information in a dictionary
         for idx, name in enumerate(names):
@@ -253,7 +262,7 @@ def ratio_calculator(directory,ref = "g",**peak_param):
         if len(peak_info) == 3 and peak_info[2] != "auto" and peak_name != ref:
             peaks,signals,fwhm,fwhm_test,names,peak_threshold = raman_batch(f'{directory}_trans',peak_info[0],\
                                                                             peak_info[1],peak_info[2],noise_min=peak_info[0],\
-                                                                            noise_max=peak_info[1],export=False)
+                                                                            normalized=normalized,noise_max=peak_info[1],export=False)
             for idx, name in enumerate(names):
                 peak_value = peaks[idx][0]
                 peak_signal = peak_data[f'{name}']['total']['signal'][int((peak_value - peak_param['total'][0])*2)]
@@ -264,7 +273,10 @@ def ratio_calculator(directory,ref = "g",**peak_param):
             for file in glob.glob(f"{directory}/*.dpt"):
                 name = file.split('/')[-1] + '.txt'
                 test = raman_analyzer(file,peak_param['total'][0],peak_param['total'][1],0.2)
-                fit_spectrum = pd.DataFrame(test.spectrum_fit)
+                if normalized == True:
+                    fit_spectrum = pd.DataFrame(test.spectrum_fit)
+                else:
+                    fit_spectrum = pd.DataFrame(test.spectrum_corr)
                 # fit_spectrum.plot(x=0,y=1,title=file_name)
                 d_peak = fit_spectrum[(fit_spectrum.iloc[:,0] <= peak_info[1]) & (fit_spectrum.iloc[:,0] >= peak_info[0])]
                 # d_peak.plot(x=0,y=1,title=file_name)
@@ -275,7 +287,7 @@ def ratio_calculator(directory,ref = "g",**peak_param):
                 peak_ratio = peak_signal/peak_data[name][ref]['signal']
                 peak_indice = bisect.bisect_left(test.peak_filtered,peak_value)
                 fwhm = test.fwhm[peak_indice] if peak_signal != 0 else 0
-                peak_data[name][peak_name] = {"peak":peak_value,"signal":abs(peak_signal),'fwhm':test.fwhm[peak_indice],f'{peak_name}_{ref}':peak_ratio}
+                peak_data[name][peak_name] = {"peak":peak_value,"signal":abs(peak_signal),'fwhm':fwhm,f'{peak_name}_{ref}':peak_ratio}
 
     file_name = [peak for peak in peak_data.keys()]
     all_peaks = []
@@ -312,12 +324,13 @@ class raman_fitting(raman_analyzer):
 
     def __init__(self,name,fit_min,fit_max,kw_fn={},\
                  fit_algo='nelder',fit_type='gaussian',\
-                 peak_num=5,min=1100,max=3000,filter=5):
+                 peak_num=5,peak_init=[],min=1100,max=3000,filter=5):
         self.fit_min = fit_min
         self.fit_max = fit_max
         self.fit_algo = fit_algo
         self.kw_fn = kw_fn
         self.peak_num = peak_num
+        self.peak_init = peak_init
         self.fit_type = fit_type
         super().__init__(name, min, max, filter, min, max)
         self.fit_gen()
@@ -339,21 +352,31 @@ class raman_fitting(raman_analyzer):
         self.fit_peaks = np.array(self.peak_filtered)
         self.fit_peaks = self.fit_peaks[(self.fit_peaks >= self.fit_min) & (self.fit_peaks <= self.fit_max)]
         self.fit_params = lmfit.Parameters()
-        n = len(self.fit_peaks)
-        if n > self.peak_num:
-            self.fit_peaks = self.fit_peaks[:self.peak_num]
-        elif n < self.peak_num:
-            range_gap = self.peak_num - len(self.fit_peaks)
-            self.fit_peaks = np.append(self.fit_peaks, np.linspace(self.fit_min + 20, self.fit_max - 20, range_gap))
+        if self.peak_init == []:
+            n = len(self.fit_peaks)
+            if n > self.peak_num:
+                self.fit_peaks = self.fit_peaks[:self.peak_num]
+            elif n < self.peak_num:
+                range_gap = self.peak_num - len(self.fit_peaks)
+                self.fit_peaks = np.append(self.fit_peaks, np.linspace(self.fit_min + 20, self.fit_max - 20, range_gap))
+        else:
+            self.fit_peaks = self.peak_init
+            n = len(self.peak_init)
+            self.peak_num = len(self.peak_init)
         # build the initial guess for the fitting and check lmfit documentation for more details
         for i in range(self.peak_num):
-            if i < n:
+            if i < n and self.peak_init[i] != 1590:
                 self.fit_params.add_many((f'a{i}',amplitude,True,0,None,None),
-                                         (f'f{i}',self.fit_peaks[i],True,self.fit_peaks[i]-25,self.fit_peaks[i]+25,None),
-                                         (f'l{i}',wide,True,0,50,None))
+                                         (f'f{i}',self.fit_peaks[i],True,self.fit_peaks[i]-5,self.fit_peaks[i]+5,None),
+                                         (f'l{i}',wide,True,0,30,None))
+            elif i < n and self.peak_init[i] == 1590:
+                self.fit_params.add_many((f'a{i}',amplitude,True,0,None,None),
+                                         (f'f{i}',self.fit_peaks[i],True,self.fit_peaks[i]-5,self.fit_peaks[i]+5,None),
+                                         (f'l{i}',wide,True,0,30,None))
+
             else:
                 self.fit_params.add_many((f'a{i}',amplitude,True,0,None,None),
-                                         (f'f{i}',self.fit_peaks[i],True,self.fit_peaks[i]-75,self.fit_peaks[i]+75,None),
+                                         (f'f{i}',self.fit_peaks[i],True,self.fit_peaks[i]-55,self.fit_peaks[i]+55,None),
                                          (f'l{i}',wide,True,0,50,None))
             
     def fit_residue(self,par,x,data=None,eps=None):
@@ -421,15 +444,33 @@ class raman_fitting(raman_analyzer):
         """
         self.fit_report = []
         for i in range(self.peak_num):
-            single_report = []
-            single_report.append(self.fit_result1.params[f'f{i}'].value)
-            single_report.append(self.fit_result1.params[f'l{i}'].value * 2)
-            single_report.append(self.fit_result1.params[f'a{i}'].value)
+            if i > 0:
+                single_report = []
+                single_report.append(self.fit_result1.params[f'f{i}'].value)
+                single_report.append(self.fit_result1.params[f'l{i}'].value * 2)
+                single_report.append(self.fit_result1.params[f'a{i}'].value)
+                single_report.append(rp.peakarea(self.fit_type,\
+                                                 pos = self.fit_result1.params[f'f{i}'].value,\
+                                                 amp=self.fit_result1.params[f'a{i}'].value,\
+                                                 HWHM=self.fit_result1.params[f'l{i}'].value))
+                single_report.append(self.fit_result1.params[f'a{i}']/self.fit_report[0][2])
+                single_report.append(single_report[3]/self.fit_report[0][3])
+            else:
+                single_report = []
+                single_report.append(self.fit_result1.params[f'f{i}'].value)
+                single_report.append(self.fit_result1.params[f'l{i}'].value * 2)
+                single_report.append(self.fit_result1.params[f'a{i}'].value)
+                single_report.append(rp.peakarea(self.fit_type,\
+                                                 pos=self.fit_result1.params[f'f{i}'].value,\
+                                                 amp=self.fit_result1.params[f'a{i}'].value,\
+                                                 HWHM=self.fit_result1.params[f'l{i}'].value))
+                single_report.append(1)
+                single_report.append(1)
             self.fit_report.append(single_report)
         self.fit_report.sort()
 
 
-def raman_fitting_batch(directory,fit_min,fit_max,min=1100,max=3000,filter=5,kw_fn={},peak_num=5,export=False,fit_algo='powell',fit_type='gaussian'):
+def raman_fitting_batch(directory,fit_min,fit_max,min=1100,max=3000,filter=5,kw_fn={},peak_init=[],peak_num=5,export=False,fit_algo='powell',fit_type='gaussian'):
     """
     This function is used to perform peak fitting in batch and export the fitting result.
     params:
@@ -444,20 +485,31 @@ def raman_fitting_batch(directory,fit_min,fit_max,min=1100,max=3000,filter=5,kw_
     # create an empty array with 3 * peak_num columns
     fit_reports = []
     names = []
+    redchi = []
     # loop all the files in the directory
     for file in glob.glob(f"{directory}/*.dpt"):
-        result = raman_fitting(file,fit_min,fit_max,kw_fn,fit_algo,fit_type,peak_num,min,max,filter)
+        result = raman_fitting(file,fit_min,fit_max,kw_fn,fit_algo,fit_type,peak_num,peak_init,min,max,filter)
         names.append(file.split('/')[-1])
+        redchi.append(result.fit_result1.redchi)
         if export == True:
             result.fit_plot()
         # export the fitting result
         fit_report = np.array(result.fit_report).T
         fit_report = fit_report.reshape(1,-1)
         fit_reports.append(fit_report[0])
-    columns = [f'peak{i}' for i in range(peak_num)] + \
-              [f'fwhm{i}' for i in range(peak_num)] + \
-              [f'intensity{i}' for i in range(peak_num)]
+    columns = [f'peak{i}' for i in range(result.peak_num)] + \
+              [f'fwhm{i}' for i in range(result.peak_num)] + \
+              [f'intensity{i}' for i in range(result.peak_num)] + \
+              [f'area{i}' for i in range(result.peak_num)] + \
+              [f'I_ratio{i}' for i in range(result.peak_num)] + \
+              [f'area_ratio{i}' for i in range(result.peak_num)]
+
+
+
     fit_reports = pd.DataFrame(fit_reports,columns=columns)
+    # add the reduced chi square as the last column
+    fit_reports.insert(len(fit_reports.columns),'redchi',redchi)
+
     # calculate the average and std of the fitting result
     fit_reports.loc['average'] = fit_reports.mean()
     fit_reports.loc['std'] = fit_reports.std()
