@@ -1,6 +1,9 @@
 import os,collections,glob,bisect
 import numpy as np
+import matplotlib as mpl
 from matplotlib import pyplot as plt
+from matplotlib.ticker import AutoMinorLocator, MultipleLocator
+import matplotlib.font_manager as fm
 import rampy as rp
 import scipy
 from scipy import signal
@@ -418,24 +421,53 @@ class raman_fitting(raman_analyzer):
         self.fit_result1 = lmfit.minimize(self.fit_residue,self.fit_params,method = self.fit_algo,\
                                          args=(self.fit_range[:,0],self.fit_range[:,1]),**self.kw_fn)
 
-    def fit_plot(self):
+    def fit_plot(self, save=False):
         """
         This function is used to plot the fitting result.
         """
-        plt.figure(figsize=(10,5))
+        # get the script path
+        colors = ["#C4421A", "#1AC441", "#1A42C4", "#C4C41A", "#C41AC4", "#1AC4C4"]
+        script_path = os.path.dirname(os.path.abspath(__file__))
+        # Add the font files to Matplotlib's font manager.
+        font_path = script_path + '/Times_New_Roman.ttf'
+        bold_font_path = script_path + '/Times_New_Roman_Bold.ttf'
+        mpl.rcParams['axes.labelweight'] = 'bold'
+        # Add the font to Matplotlib's font manager.
+        fm.fontManager.addfont(font_path)
+        fm.fontManager.addfont(bold_font_path)
+        plt.rcParams['font.family'] = 'Times New Roman'
+        plt.rcParams['mathtext.fontset'] = 'stix'
+        fig, ax = plt.subplots(figsize=(6, 4))
+        plt.gca().spines['top'].set_linewidth(1.5)
+        plt.gca().spines['right'].set_linewidth(1.5)
+        plt.gca().spines['bottom'].set_linewidth(1.5)
+        plt.gca().spines['left'].set_linewidth(1.5)
+        plt.tick_params(which='major',direction='out',width=1,length=4.5,labelsize=12)
+
+        plt.tick_params(which='minor',direction='out',width=1,length=3,labelsize=12)
+        # set the minor ticks
+        ax.xaxis.set_major_locator(MultipleLocator((self.fit_max - self.fit_min)//5))
+        minor_locator_x = AutoMinorLocator(2)
+        minor_locator_y = AutoMinorLocator(2)
+        ax.xaxis.set_minor_locator(minor_locator_x)
+        ax.yaxis.set_minor_locator(minor_locator_y)
         x_fit = self.fit_range[:,0]
         y_fit = self.fit_range[:,1]
         self.model = lmfit.fit_report(self.fit_result1.params)
         yout,fit_y = self.fit_residue(self.fit_result1.params,x_fit)
-        plt.scatter(x_fit[::6],y_fit[::6],s=20,marker='o',color='#EA6C0A',label='experimental data')
-        plt.scatter(x_fit,yout,s=1,marker='*',color='#743809',label='fitting data')
+        plt.scatter(x_fit[::6],y_fit[::6],s=16,marker='o',color='k',label='experimental data')
+        plt.plot(x_fit,yout,color='#E6750A',linewidth=2,label='fitting data')
         for i in range(self.peak_num):
-            plt.plot(x_fit,fit_y[f'peak{i}'],color='#DEA01A')
+            plt.plot(x_fit,fit_y[f'peak{i}'],color=colors[i%len(colors)],linewidth=2)
         plt.ylim(-0.5,10.5)
         plt.xlim(self.fit_min,self.fit_max)
-        plt.xlabel("Raman shift, cm$^{-1}$", fontsize = 14)
-        plt.ylabel("Normalized intensity, a. u.", fontsize = 14)
-        plt.legend(fontsize=9)
+        plt.xlabel("Raman shift (cm$^{\mathbf{-1}}$)", fontsize = 14,fontweight='bold')
+        plt.ylabel("Normalized intensity (a. u.)", fontsize = 14,fontweight='bold')
+        # add border of legend
+        plt.legend(frameon=True,edgecolor='black',facecolor='white',fontsize='small')
+        if save == True:
+            plt.savefig(f'{self.name.split("/")[-1]}_fit.jpg',dpi=1000,bbox_inches='tight')
+        plt.title(self.name.split('/')[-1],fontsize=10)
         plt.show()
 
     def fit_export(self):
@@ -470,7 +502,7 @@ class raman_fitting(raman_analyzer):
         self.fit_report.sort()
 
 
-def raman_fitting_batch(directory,fit_min,fit_max,min=1100,max=3000,filter=5,kw_fn={},peak_init=[],peak_num=5,export=False,fit_algo='powell',fit_type='gaussian'):
+def raman_fitting_batch(directory,fit_min,fit_max,min=1100,max=3000,filter=5,kw_fn={},peak_init=[],peak_num=5,export=False,save=False,fit_algo='powell',fit_type='gaussian'):
     """
     This function is used to perform peak fitting in batch and export the fitting result.
     params:
@@ -492,7 +524,7 @@ def raman_fitting_batch(directory,fit_min,fit_max,min=1100,max=3000,filter=5,kw_
         names.append(file.split('/')[-1])
         redchi.append(result.fit_result1.redchi)
         if export == True:
-            result.fit_plot()
+            result.fit_plot(save=save)
         # export the fitting result
         fit_report = np.array(result.fit_report).T
         fit_report = fit_report.reshape(1,-1)
