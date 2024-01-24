@@ -525,6 +525,9 @@ def raman_fitting_batch(directory,fit_min,fit_max,min=1100,max=3000,filter=5,kw_
         redchi.append(result.fit_result1.redchi)
         if export == True:
             result.fit_plot(save=save)
+            if not os.path.exists(f'{directory}_fit'):
+                os.mkdir(f'{directory}_fit')
+            os.system(f'mv {file.split("/")[-1]}_fit.jpg {directory}_fit')
         # export the fitting result
         fit_report = np.array(result.fit_report).T
         fit_report = fit_report.reshape(1,-1)
